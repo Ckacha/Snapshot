@@ -1,9 +1,11 @@
 import 'dotenv/config';
 import { SocketModeClient } from '@slack/socket-mode';
 import { userClient, botClient } from '../clients.js';
-import { loadWatchlist } from './watchlist.js';
+import { registerOwner, installedCount } from '../tokens.js';
+import { loadWatchlist, saveWatchlist, migrateWatchlist } from './watchlist.js';
 import { createHandlers } from './handlers.js';
 import { reconcile } from './reconcile.js';
+import { webConfig, startWebServer } from '../web/server.js';
 
 const appToken = process.env.SLACK_APP_TOKEN;
 if (!appToken) {
@@ -31,20 +33,46 @@ function bail(reason) {
 process.on('unhandledRejection', (err) => bail(`unhandledRejection: ${err?.stack || err}`));
 process.on('uncaughtException', (err) => bail(`uncaughtException: ${err?.stack || err}`));
 
-let cachedDmChannelId;
-async function getDmChannelId() {
-  if (cachedDmChannelId) return cachedDmChannelId;
-  const auth = await userClient.auth.test();
-  const res = await botClient.conversations.open({ users: auth.user_id });
-  cachedDmChannelId = res.channel.id;
-  return cachedDmChannelId;
+const dmChannelIds = new Map();
+async function getDmChannelId(userId) {
+  if (dmChannelIds.has(userId)) return dmChannelIds.get(userId);
+  const res = await botClient.conversations.open({ users: userId });
+  dmChannelIds.set(userId, res.channel.id);
+  return res.channel.id;
 }
 
 async function main() {
-  const watchlist = new Map(Object.entries(loadWatchlist()));
-  console.log(`Watching ${watchlist.size} message(s) for deletion.`);
+  const owner = await userClient.auth.test();
+  registerOwner(owner.user_id, userClient);
 
-  const { onInteractive, onStarAdded, onStarRemoved, onMessage, handleDeletion } = createHandlers({ watchlist, getDmChannelId });
+  const watchlist = new Map(Object.entries(loadWatchlist()));
+  const migrated = migrateWatchlist(watchlist, owner.user_id);
+  if (migrated) {
+    saveWatchlist(Object.fromEntries(watchlist));
+    console.log(`Assigned ${migrated} existing watch(es) to the owner (${owner.user_id}).`);
+  }
+  console.log(`Watching ${watchlist.size} message(s) for deletion, for ${installedCount()} connected user(s).`);
+
+  const web = webConfig();
+  const installUrl = web.missing ? null : `${web.baseUrl}/`;
+
+  const { onInteractive, onStarAdded, onStarRemoved, onMessage, onTokensRevoked, handleDeletion } =
+    createHandlers({ watchlist, getDmChannelId, installUrl });
+
+  if (web.missing) {
+    console.warn(`Install page disabled (missing ${web.missing.join(', ')}); only the owner can use the bot.`);
+  } else {
+    startWebServer({
+      config: web,
+      teamId: owner.team_id,
+      onInstalled: async (userId) => {
+        await botClient.chat.postMessage({
+          channel: await getDmChannelId(userId),
+          text: ":wave: You're connected. Right-click any message → More actions → *Watch for deletion*, and I'll DM you its text if it's ever deleted. Messages you \"Save for later\" are watched too.",
+        });
+      },
+    });
+  }
 
   const socket = new SocketModeClient({ appToken });
 
@@ -60,15 +88,20 @@ async function main() {
     await ack();
     await onInteractive({ body }).catch((err) => console.error('onInteractive error:', err));
   });
-  socket.on('star_added', async ({ event, ack }) => {
+  socket.on('star_added', async ({ event, body, ack }) => {
     markAlive();
     await ack();
-    await onStarAdded({ event }).catch((err) => console.error('onStarAdded error:', err));
+    await onStarAdded({ event, body }).catch((err) => console.error('onStarAdded error:', err));
   });
-  socket.on('star_removed', async ({ event, ack }) => {
+  socket.on('star_removed', async ({ event, body, ack }) => {
     markAlive();
     await ack();
-    await onStarRemoved({ event }).catch((err) => console.error('onStarRemoved error:', err));
+    await onStarRemoved({ event, body }).catch((err) => console.error('onStarRemoved error:', err));
+  });
+  socket.on('tokens_revoked', async ({ event, ack }) => {
+    markAlive();
+    await ack();
+    await onTokensRevoked({ event }).catch((err) => console.error('onTokensRevoked error:', err));
   });
   socket.on('message', async ({ event, ack }) => {
     markAlive();

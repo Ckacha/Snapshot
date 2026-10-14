@@ -1,6 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { userClient } from '../clients.js';
+import { getClient } from '../tokens.js';
+import { watcherIds } from './watchlist.js';
 
 const STATE_PATH = path.resolve('data', 'last_reconcile.txt');
 const PACE_MS = 1200; 
@@ -9,11 +11,11 @@ const GONE_ERRORS = new Set(['message_not_found', 'thread_not_found']);
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-export async function checkExists({ channel, ts, thread_ts }) {
+export async function checkExists({ channel, ts, thread_ts }, client = userClient) {
   try {
     const res = thread_ts && thread_ts !== ts
-      ? await userClient.conversations.replies({ channel, ts: thread_ts, oldest: ts, latest: ts, inclusive: true, limit: 1 })
-      : await userClient.conversations.history({ channel, oldest: ts, latest: ts, inclusive: true, limit: 1 });
+      ? await client.conversations.replies({ channel, ts: thread_ts, oldest: ts, latest: ts, inclusive: true, limit: 1 })
+      : await client.conversations.history({ channel, oldest: ts, latest: ts, inclusive: true, limit: 1 });
     const msg = res.messages?.find((m) => m.ts === ts);
     return !msg || msg.subtype === 'tombstone' ? 'gone' : 'present';
   } catch (err) {
@@ -40,7 +42,8 @@ export async function reconcile({ watchlist, handleDeletion, force = false }) {
     const gone = [];
     let unknown = 0;
     for (const saved of entries) {
-      const state = await checkExists(saved);
+      const client = watcherIds(saved).map(getClient).find(Boolean);
+      const state = client ? await checkExists(saved, client) : 'unknown';
       if (state === 'gone') gone.push(saved);
       else if (state === 'unknown') unknown++;
       await sleep(PACE_MS);

@@ -24,7 +24,7 @@ switch (command) {
       break;
     }
     for (const [key, entry] of entries) {
-      console.log(`[watching] ${entry.saved_at?.slice(0, 10)}  channel:${entry.channel}  user:${entry.user}`);
+      console.log(`[watching] ${entry.saved_at?.slice(0, 10)}  channel:${entry.channel}  user:${entry.user}  watchers:${Object.keys(entry.watchers ?? {}).join(',') || '(owner)'}`);
       console.log(`  ${preview(entry.text)}`);
       console.log(`  key: ${key}\n`);
     }

@@ -23,6 +23,20 @@ export function watchlistKey(channel, ts) {
   return `${channel}-${ts}`;
 }
 
+export function migrateWatchlist(watchlist, ownerId) {
+  let changed = 0;
+  for (const entry of watchlist.values()) {
+    if (entry.watchers) continue;
+    entry.watchers = { [ownerId]: entry.saved_at ?? new Date().toISOString() };
+    changed++;
+  }
+  return changed;
+}
+
+export function watcherIds(entry) {
+  return Object.keys(entry?.watchers ?? {});
+}
+
 export function appendDeletedLog(entry) {
   ensureDataDir();
   const log = fs.existsSync(DELETED_LOG_PATH) ? JSON.parse(fs.readFileSync(DELETED_LOG_PATH, 'utf8')) : [];
