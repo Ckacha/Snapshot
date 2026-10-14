@@ -1,0 +1,18 @@
+{
+  "name": "slack-saved-archiver",
+  "version": "1.0.0",
+  "description": "Archives Slack 'Saved for later' items locally so their content survives even if unsaved or deleted upstream.",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "bot": "node src/bot/index.js",
+    "list": "node src/cli.js list",
+    "removed": "node src/cli.js removed",
+    "search": "node src/cli.js search"
+  },
+  "dependencies": {
+    "@slack/socket-mode": "^2.0.2",
+    "@slack/web-api": "^7.8.0",
+    "dotenv": "^16.4.5"
+  }
+}
