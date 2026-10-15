@@ -2,10 +2,11 @@ import { botClient, resolveUserName, resolveChannelName, channelMention } from '
 import { getClient, removeUser } from '../tokens.js';
 import { watchlistKey, saveWatchlist, appendDeletedLog, watcherIds } from './watchlist.js';
 import { findContextMessage } from './context.js';
-import { checkExists } from './reconcile.js';
+import { checkExists, lookupMessage } from './reconcile.js';
 import { describeFiles, needsCapture, captureMedia, storedMedia, removeMedia } from './media.js';
 
 export const WATCH_CALLBACK_ID = 'watch_message';
+const NAME_LOOKUP_BUDGET_MS = 5000;
 
 const GREETINGS = [
   (m) => `hey ${m}`,
@@ -18,7 +19,7 @@ export function greeting(userId) {
   return GREETINGS[Math.floor(Math.random() * GREETINGS.length)](`<@${userId}>`);
 }
 
-export function createHandlers({ watchlist, getDmChannelId, installUrl }) {
+export function createHandlers({ watchlist, getDmChannelId, installUrl, slackUrl }) {
   function persist() {
     saveWatchlist(Object.fromEntries(watchlist));
   }
@@ -84,7 +85,7 @@ export function createHandlers({ watchlist, getDmChannelId, installUrl }) {
     } else {
       addWatch(userId, { ...msg, channel });
       persist();
-      confirmationText = "Watching this message — I'll DM you if it gets deleted.";
+      confirmationText = `Watching this message — I'll DM you if it gets deleted.${installUrl ? ` See everything you're watching: ${installUrl}me` : ''}`;
     }
 
     if (body.response_url) {
@@ -242,5 +243,81 @@ export function createHandlers({ watchlist, getDmChannelId, installUrl }) {
     }
   }
 
-  return { onInteractive, onStarAdded, onStarRemoved, onMessage, onTokensRevoked, handleDeletion, backfill };
+  function messageLink({ channel, ts, thread_ts }) {
+    if (!slackUrl) return null;
+    const link = `${slackUrl}archives/${channel}/p${ts.replace('.', '')}`;
+    return thread_ts && thread_ts !== ts ? `${link}?thread_ts=${thread_ts}&cid=${channel}` : link;
+  }
+
+  async function listFor(userId) {
+    const client = getClient(userId);
+    const mine = [...watchlist.entries()].filter(([, e]) => e.watchers?.[userId]);
+    const userIds = new Set([userId]);
+    const channelIds = new Set();
+
+    for (const [, e] of mine) { 
+      if (e.user) userIds.add(e.user);
+      channelIds.add(e.channel);
+      for (const [, id] of (e.text ?? '').matchAll(/<@([UW][A-Z0-9]+)(?:\|[^>]*)?>/g)) userIds.add(id);
+    }
+
+    const deadline = new Promise((r) => setTimeout(r, NAME_LOOKUP_BUDGET_MS));
+    const lookup = (ids, resolve) => Promise.all([...ids].map(async (id) =>
+      [id, await Promise.race([resolve(id, client), deadline.then(() => null)])])).then(Object.fromEntries);
+    const [users, channels] = await Promise.all([lookup(userIds, resolveUserName), lookup(channelIds, resolveChannelName)]);
+    const items = mine.map(([key, e]) => ({
+      key,
+      channel: channels[e.channel] ?? e.channel,
+      author: e.user ? users[e.user] ?? e.user : null,
+      text: e.text ?? '',
+      files: (e.files ?? []).map((f) => f.name),
+      savedFiles: storedMedia(e).length,
+      savedAt: e.watchers[userId],
+      link: messageLink(e),
+    })).sort((a, b) => String(b.savedAt).localeCompare(String(a.savedAt)));
+
+    return { userName: users[userId], users, items };
+  }
+
+  function unwatch(userId, keys) {
+    let removed = 0;
+    for (const key of new Set(keys)) {
+      if (!watchlist.get(key)?.watchers?.[userId]) continue;
+      removeWatch(userId, key);
+      removed++;
+    }
+
+    if (removed) persist();
+    return removed;
+  }
+
+  async function watchLink(userId, link) {
+    const m = /\/archives\/([CDG][A-Z0-9]+)\/p(\d{10})(\d{6})/.exec(link);
+    if (!m) return { error: "That doesn't look like a Slack message link. In Slack: hover the message → ⋮ → Copy link." };
+    const channel = m[1];
+    const ts = `${m[2]}.${m[3]}`;
+    let thread_ts;
+    
+    try {
+      thread_ts = new URL(link).searchParams.get('thread_ts') ?? undefined;
+    } catch {
+    }
+
+    const client = getClient(userId);
+    const { state, message } = await lookupMessage({ channel, ts, thread_ts }, client);
+    
+    if (state !== 'present') return { error: "Couldn't find that message. Make sure you can see it in Slack." };
+    
+    const key = watchlistKey(channel, ts);
+    const already = Boolean(watchlist.get(key)?.watchers?.[userId]);
+    
+    if (!already) {
+      addWatch(userId, { ...message, channel, thread_ts: message.thread_ts ?? thread_ts });
+      persist();
+      captureFor(key, client).catch((err) => console.error('Media capture failed:', err));
+    }
+    return { ok: true, already };
+  }
+
+  return { onInteractive, onStarAdded, onStarRemoved, onMessage, onTokensRevoked, handleDeletion, backfill, listFor, unwatch, watchLink };
 }

@@ -56,8 +56,8 @@ async function main() {
   const web = webConfig();
   const installUrl = web.missing ? null : `${web.baseUrl}/`;
 
-  const { onInteractive, onStarAdded, onStarRemoved, onMessage, onTokensRevoked, handleDeletion, backfill } =
-    createHandlers({ watchlist, getDmChannelId, installUrl });
+  const { onInteractive, onStarAdded, onStarRemoved, onMessage, onTokensRevoked, handleDeletion, backfill, listFor, unwatch, watchLink } =
+    createHandlers({ watchlist, getDmChannelId, installUrl, slackUrl: owner.url });
 
   if (web.missing) {
     console.warn(`Install page disabled (missing ${web.missing.join(', ')}); only the owner can use the bot.`);
@@ -65,10 +65,12 @@ async function main() {
     startWebServer({
       config: web,
       teamId: owner.team_id,
-      onInstalled: async (userId) => {
+      api: { listFor, unwatch, watchLink },
+      onInstalled: async (userId, { isNew }) => {
+        if (!isNew) return;
         await botClient.chat.postMessage({
           channel: await getDmChannelId(userId),
-          text: "You're connected. Right-click any message → More actions → *Watch for deletion*, and I'll DM you its text if it's ever deleted. Messages you \"Save for later\" are watched too.",
+          text: `You're connected. Right-click any message → More actions → *Watch for deletion*, and I'll DM you its text if it's ever deleted. Messages you "Save for later" are watched too. See and edit everything you're watching at ${installUrl}me`,
         });
         if (userId !== owner.user_id) {
           await botClient.chat.postMessage({

@@ -11,7 +11,7 @@ const GONE_ERRORS = new Set(['message_not_found', 'thread_not_found']);
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-async function lookup({ channel, ts, thread_ts }, client) {
+export async function lookupMessage({ channel, ts, thread_ts }, client) {
   try {
     const res = thread_ts && thread_ts !== ts
       ? await client.conversations.replies({ channel, ts: thread_ts, oldest: ts, latest: ts, inclusive: true, limit: 1 })
@@ -24,7 +24,7 @@ async function lookup({ channel, ts, thread_ts }, client) {
 }
 
 export async function checkExists(saved, client = userClient) {
-  return (await lookup(saved, client)).state;
+  return (await lookupMessage(saved, client)).state;
 }
 
 function recentlyRan() {
@@ -47,7 +47,7 @@ export async function reconcile({ watchlist, handleDeletion, backfill, force = f
     let unknown = 0;
     for (const saved of entries) {
       const client = watcherIds(saved).map(getClient).find(Boolean);
-      const { state, message } = client ? await lookup(saved, client) : { state: 'unknown' };
+      const { state, message } = client ? await lookupMessage(saved, client) : { state: 'unknown' };
       if (state === 'gone') gone.push(saved);
       else if (state === 'unknown') unknown++;
       else if (backfill) await backfill(saved, message, client).catch((err) => console.error('Media backfill failed:', err));

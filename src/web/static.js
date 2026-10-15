@@ -9,10 +9,12 @@ const FILES = {
   '/styles.css': ['styles.css', 'text/css; charset=utf-8'],
   '/app.js': ['app.js', 'text/javascript; charset=utf-8'],
   '/avatar.png': ['avatar.png', 'image/png'],
+  '/me': ['me.html', 'text/html; charset=utf-8'],
+  '/me.js': ['me.js', 'text/javascript; charset=utf-8'],
 };
 
 export const SECURITY_HEADERS = {
-  'Content-Security-Policy': "default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+  'Content-Security-Policy': "default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
   'X-Content-Type-Options': 'nosniff',
   'Referrer-Policy': 'no-referrer',
 };

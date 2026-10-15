@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Your list · Snapshot</title>
+    <link rel="icon" href="/avatar.png">
+    <link rel="stylesheet" href="/styles.css">
+    <script src="/me.js" defer></script>
+  </head>
+  
+<body>
+<main class="wide">
+  <header class="me-head">
+    <a href="/"><img class="avatar" src="/avatar.png" alt="Snapshot home"></a>
+    <div class="me-title">
+      <h1>Your watched messages</h1>
+      <p class="fine" id="summary">Loading…</p>
+    </div>
+    <button class="ghost" id="signout" type="button" hidden>Sign out</button>
+  </header>
+
+  <section class="card" id="signed-out" hidden>
+    <h2>Sign in to see your list</h2>
+    <p>Sign in with the same Slack account you connected to Snapshot. Only you can see your list.</p>
+    <p><a class="button" href="/slack/install?next=me">Sign in with Slack</a></p>
+  </section>
+
+  <section id="signed-in" hidden>
+    <form class="card add" id="add">
+      <label for="link"><strong>Watch another message</strong></label>
+      <div class="row">
+        <input id="link" type="url" placeholder="Paste a Slack message link" required>
+        <button class="button" type="submit">Watch</button>
+      </div>
+      <p class="fine" id="add-msg">In Slack: hover a message → ⋮ → Copy link.</p>
+    </form>
+
+    <div class="toolbar">
+      <input id="search" type="search" placeholder="Search text, channel or person" aria-label="Search">
+      <label class="check"><input type="checkbox" id="select-all"> Select all</label>
+      <button class="button danger" id="remove" type="button" disabled>Stop watching</button>
+    </div>
+    <p class="fine">Stopping only affects Snapshot. Your Slack "Save for later" list isn't changed.</p>
+
+    <ul class="items" id="list"></ul>
+    <p class="fine empty" id="empty" hidden>Nothing here yet. Save a message for later in Slack, or paste a link above.</p>
+  </section>
+</main>
+</body>
+</html>
