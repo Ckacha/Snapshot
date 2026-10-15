@@ -8,6 +8,12 @@ import { describeFiles, needsCapture, captureMedia, storedMedia, removeMedia } f
 export const WATCH_CALLBACK_ID = 'watch_message';
 const NAME_LOOKUP_BUDGET_MS = 5000;
 
+function fallbackChannelName(channelId) {
+  if (channelId.startsWith('D')) return 'DM';
+  if (channelId.startsWith('G')) return 'private channel';
+  return channelId;
+}
+
 const GREETINGS = [
   (m) => `hey ${m}`,
   (m) => `yo ${m}`,
@@ -43,6 +49,10 @@ export function createHandlers({ watchlist, getDmChannelId, installUrl, slackUrl
   }
 
   async function backfill(saved, message, client) {
+    if (!saved.user && message.user) {
+      saved.user = message.user;
+      persist();
+    }
     if (!saved.files?.length) {
       const files = describeFiles(message.files);
       if (!saved.files || files.length) {
@@ -267,7 +277,7 @@ export function createHandlers({ watchlist, getDmChannelId, installUrl, slackUrl
     const [users, channels] = await Promise.all([lookup(userIds, resolveUserName), lookup(channelIds, resolveChannelName)]);
     const items = mine.map(([key, e]) => ({
       key,
-      channel: channels[e.channel] ?? e.channel,
+      channel: channels[e.channel] && channels[e.channel] !== e.channel ? channels[e.channel] : fallbackChannelName(e.channel),
       author: e.user ? users[e.user] ?? e.user : null,
       text: e.text ?? '',
       files: (e.files ?? []).map((f) => f.name),
