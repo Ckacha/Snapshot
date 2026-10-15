@@ -70,6 +70,12 @@ async function main() {
           channel: await getDmChannelId(userId),
           text: ":wave: You're connected. Right-click any message → More actions → *Watch for deletion*, and I'll DM you its text if it's ever deleted. Messages you \"Save for later\" are watched too.",
         });
+        if (userId !== owner.user_id) {
+          await botClient.chat.postMessage({
+            channel: await getDmChannelId(owner.user_id),
+            text: `:bust_in_silhouette: <@${userId}> connected their Slack account to Snapshot.`,
+          });
+        }
       },
     });
   }

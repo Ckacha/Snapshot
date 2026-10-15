@@ -8,7 +8,8 @@
     "bot": "node src/bot/index.js",
     "list": "node src/cli.js list",
     "removed": "node src/cli.js removed",
-    "search": "node src/cli.js search"
+    "search": "node src/cli.js search",
+    "preview": "node src/web/preview.js"
   },
   "dependencies": {
     "@slack/socket-mode": "^2.0.2",

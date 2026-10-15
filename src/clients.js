@@ -44,7 +44,7 @@ export async function resolveChannelName(channelId, client = userClient) {
   if (!c) return channelId;
   return c.is_im ? 'DM' : c.is_mpim ? 'group-DM' : (c.name ? `#${c.name}` : channelId);
 }
-
+ 
 export async function channelMention(channelId, client = userClient) {
   if (!channelId) return null;
   const c = await getChannelInfo(channelId, client);
