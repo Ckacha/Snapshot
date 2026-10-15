@@ -56,7 +56,7 @@ async function main() {
   const web = webConfig();
   const installUrl = web.missing ? null : `${web.baseUrl}/`;
 
-  const { onInteractive, onStarAdded, onStarRemoved, onMessage, onTokensRevoked, handleDeletion } =
+  const { onInteractive, onStarAdded, onStarRemoved, onMessage, onTokensRevoked, handleDeletion, backfill } =
     createHandlers({ watchlist, getDmChannelId, installUrl });
 
   if (web.missing) {
@@ -136,7 +136,7 @@ async function main() {
   console.log('Connected via Socket Mode.');
   console.log('Right-click a message -> More actions -> "Watch for deletion" to start tracking it.');
 
-  const catchUp = (force = false) => reconcile({ watchlist, handleDeletion, force });
+  const catchUp = (force = false) => reconcile({ watchlist, handleDeletion, backfill, force });
   socket.on('connected', () => { if (wasDown) { wasDown = false; catchUp(true); } });
   socket.on('reconnecting', () => { wasDown = true; });
   setInterval(() => catchUp(true), 15 * 60_000);

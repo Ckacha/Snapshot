@@ -9,6 +9,7 @@ export const USER_SCOPES = [
   'channels:read', 'groups:read', 'im:read', 'mpim:read',
   'users:read', 'stars:read',
 ];
+const OPTIONAL_USER_SCOPES = ['files:read'];
 
 const STATE_TTL_MS = 10 * 60_000;
 const MAX_PENDING = 500;
@@ -109,7 +110,7 @@ export function startWebServer({ config, teamId, onInstalled }) {
         const state = newState();
         const authorize = new URL('https://slack.com/oauth/v2/authorize');
         authorize.searchParams.set('client_id', config.clientId);
-        authorize.searchParams.set('user_scope', USER_SCOPES.join(','));
+        authorize.searchParams.set('user_scope', [...USER_SCOPES, ...OPTIONAL_USER_SCOPES].join(','));
         authorize.searchParams.set('redirect_uri', config.redirectUri);
         authorize.searchParams.set('state', state);
         authorize.searchParams.set('team', teamId);

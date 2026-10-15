@@ -11,16 +11,20 @@ const GONE_ERRORS = new Set(['message_not_found', 'thread_not_found']);
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-export async function checkExists({ channel, ts, thread_ts }, client = userClient) {
+async function lookup({ channel, ts, thread_ts }, client) {
   try {
     const res = thread_ts && thread_ts !== ts
       ? await client.conversations.replies({ channel, ts: thread_ts, oldest: ts, latest: ts, inclusive: true, limit: 1 })
       : await client.conversations.history({ channel, oldest: ts, latest: ts, inclusive: true, limit: 1 });
     const msg = res.messages?.find((m) => m.ts === ts);
-    return !msg || msg.subtype === 'tombstone' ? 'gone' : 'present';
+    return !msg || msg.subtype === 'tombstone' ? { state: 'gone' } : { state: 'present', message: msg };
   } catch (err) {
-    return GONE_ERRORS.has(err?.data?.error) ? 'gone' : 'unknown';
+    return { state: GONE_ERRORS.has(err?.data?.error) ? 'gone' : 'unknown' };
   }
+}
+
+export async function checkExists(saved, client = userClient) {
+  return (await lookup(saved, client)).state;
 }
 
 function recentlyRan() {
@@ -33,7 +37,7 @@ function recentlyRan() {
 
 let running = false;
 
-export async function reconcile({ watchlist, handleDeletion, force = false }) {
+export async function reconcile({ watchlist, handleDeletion, backfill, force = false }) {
   if (running || (!force && recentlyRan())) return;
   running = true;
   try {
@@ -43,9 +47,10 @@ export async function reconcile({ watchlist, handleDeletion, force = false }) {
     let unknown = 0;
     for (const saved of entries) {
       const client = watcherIds(saved).map(getClient).find(Boolean);
-      const state = client ? await checkExists(saved, client) : 'unknown';
+      const { state, message } = client ? await lookup(saved, client) : { state: 'unknown' };
       if (state === 'gone') gone.push(saved);
       else if (state === 'unknown') unknown++;
+      else if (backfill) await backfill(saved, message, client).catch((err) => console.error('Media backfill failed:', err));
       await sleep(PACE_MS);
     }
     console.log(`Catch-up check: ${entries.length} watched, ${gone.length} gone, ${unknown} unverifiable.`);

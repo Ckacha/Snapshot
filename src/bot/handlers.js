@@ -3,6 +3,7 @@ import { getClient, removeUser } from '../tokens.js';
 import { watchlistKey, saveWatchlist, appendDeletedLog, watcherIds } from './watchlist.js';
 import { findContextMessage } from './context.js';
 import { checkExists } from './reconcile.js';
+import { describeFiles, needsCapture, captureMedia, storedMedia, removeMedia } from './media.js';
 
 export const WATCH_CALLBACK_ID = 'watch_message';
 
@@ -11,19 +12,43 @@ export function createHandlers({ watchlist, getDmChannelId, installUrl }) {
     saveWatchlist(Object.fromEntries(watchlist));
   }
 
-  function addWatch(userId, { channel, ts, thread_ts, text, user }) {
+  function addWatch(userId, { channel, ts, thread_ts, text, user, files }) {
     const key = watchlistKey(channel, ts);
     const now = new Date().toISOString();
     const entry = watchlist.get(key) ?? { channel, ts, thread_ts, text, user, saved_at: now, watchers: {} };
+    if (!entry.files?.length) entry.files = describeFiles(files);
     entry.watchers[userId] = now;
     watchlist.set(key, entry);
+    return key;
+  }
+
+  async function captureFor(key, client) {
+    const entry = watchlist.get(key);
+    if (!entry || !client || !needsCapture(entry)) return;
+    await captureMedia(key, entry, client);
+    if (watchlist.has(key)) persist();
+    else removeMedia(key);
+  }
+
+  async function backfill(saved, message, client) {
+    if (!saved.files?.length) {
+      const files = describeFiles(message.files);
+      if (!saved.files || files.length) {
+        saved.files = files;
+        persist();
+      }
+    }
+    await captureFor(watchlistKey(saved.channel, saved.ts), client);
   }
 
   function removeWatch(userId, key) {
     const entry = watchlist.get(key);
     if (!entry) return;
     delete entry.watchers[userId];
-    if (watcherIds(entry).length === 0) watchlist.delete(key);
+    if (watcherIds(entry).length === 0) {
+      watchlist.delete(key);
+      removeMedia(key);
+    }
   }
 
   const notConnectedText = installUrl
@@ -58,6 +83,7 @@ export function createHandlers({ watchlist, getDmChannelId, installUrl }) {
         body: JSON.stringify({ text: confirmationText, response_type: 'ephemeral' }),
       }).catch((err) => console.error('Failed to post response_url confirmation:', err));
     }
+    await captureFor(key, getClient(userId));
   }
 
   const starUser = (event, body) => event.user ?? body?.authorizations?.[0]?.user_id;
@@ -65,9 +91,11 @@ export function createHandlers({ watchlist, getDmChannelId, installUrl }) {
   async function onStarAdded({ event, body }) {
     const item = event.item;
     const userId = starUser(event, body);
-    if (item?.type !== 'message' || !item.message || !getClient(userId)) return;
-    addWatch(userId, { ...item.message, channel: item.channel });
+    const client = getClient(userId);
+    if (item?.type !== 'message' || !item.message || !client) return;
+    const key = addWatch(userId, { ...item.message, channel: item.channel });
     persist();
+    await captureFor(key, client);
   }
 
   async function onStarRemoved({ event, body }) {
@@ -112,8 +140,10 @@ export function createHandlers({ watchlist, getDmChannelId, installUrl }) {
     const client = watchers.map(getClient).find(Boolean) ?? undefined;
     const prev = previous ?? {};
     const authorId = prev.user ?? saved.user;
-    const text = prev.text || saved.text || '(no text — may have been a file or attachment-only message)';
+    const text = prev.text || saved.text || '';
     const threadTs = prev.thread_ts ?? saved.thread_ts;
+    const media = storedMedia(saved);
+    const fileNames = (saved.files?.length ? saved.files : describeFiles(prev.files)).map((f) => f.name);
 
     const [authorName, channelName, channelLink, context] = await Promise.all([
       resolveUserName(authorId, client),
@@ -122,27 +152,39 @@ export function createHandlers({ watchlist, getDmChannelId, installUrl }) {
       findContextMessage({ channel, ts, thread_ts: threadTs, client }),
     ]);
 
-    let contextLine = 'Context: no earlier message found.';
+    const quoted = text
+      ? text.split('\n').map((line) => `> ${line}`).join('\n')
+      : '> _(no text)_';
+
+    let contextLine = ':link: No other messages found nearby to link to.';
     if (context) {
-      const contextAuthorMention = context.userId ? `<@${context.userId}>` : 'someone';
+      const label = context.direction === 'before' ? 'Message before it' : 'Message after it (nothing before it)';
+      const by = context.userId ? ` by <@${context.userId}>` : '';
       contextLine = context.permalink
-        ? `Context (By ${contextAuthorMention}) ${context.permalink}`
-        : `Context (By ${contextAuthorMention}) (couldn't get a link)`;
+        ? `:link: <${context.permalink}|${label}>${by}`
+        : `:link: ${label}${by} (couldn't get a link)`;
     }
 
-    const dmText = [
-      `*A watched message was deleted* in ${channelLink}`,
-      `*From:* <@${authorId}>`,
-      `> ${text}`,
-      '',
+    let filesLine = null;
+    if (media.length) {
+      filesLine = `:paperclip: ${media.length === 1 ? 'Its attachment is' : `Its ${media.length} attachments are`} below.`;
+    } else if (fileNames.length) {
+      filesLine = `:paperclip: It had ${fileNames.length === 1 ? 'an attachment' : `${fileNames.length} attachments`} I couldn't save a copy of: ${fileNames.join(', ')}`;
+    }
+
+    const bodyText = [
+      `*Originally said by:* <@${authorId}>${missed ? ' _(caught on a catch-up check, so it may have been deleted a while ago)_' : ''}`,
+      quoted,
+      filesLine,
       contextLine,
-    ].join('\n');
+    ].filter(Boolean).join('\n');
 
     appendDeletedLog({
       channel,
       channel_name: channelName,
       ts,
       text,
+      files: fileNames,
       author_id: authorId,
       author_name: authorName,
       context,
@@ -151,18 +193,43 @@ export function createHandlers({ watchlist, getDmChannelId, installUrl }) {
     });
 
     if (!botClient) {
-      console.warn('SLACK_BOT_TOKEN not set — skipping DM, but logged to data/deleted_log.json:', dmText);
+      console.warn('SLACK_BOT_TOKEN not set — skipping DM, but logged to data/deleted_log.json:', bodyText);
+      removeMedia(key);
       return;
     }
 
+    let allSent = true;
     for (const userId of watchers) {
+      const dmText = `yo <@${userId}>, a message you saved in ${channelLink} got deleted :wastebasket:\n${bodyText}`;
       try {
-        await botClient.chat.postMessage({ channel: await getDmChannelId(userId), text: dmText });
+        const dm = await getDmChannelId(userId);
+        await botClient.chat.postMessage({ channel: dm, text: dmText });
+        if (media.length && !(await sendMedia(dm, media))) allSent = false;
       } catch (err) {
+        allSent = false;
         console.error(`Failed to DM ${userId} about a deletion:`, err?.data?.error || err);
       }
     }
+    if (allSent) removeMedia(key);
+    else if (media.length) console.warn(`Kept saved attachments for ${key} in data/media/ since not every DM got them.`);
   }
 
-  return { onInteractive, onStarAdded, onStarRemoved, onMessage, onTokensRevoked, handleDeletion };
+  async function sendMedia(dm, media) {
+    try {
+      await botClient.files.uploadV2({
+        channel_id: dm,
+        file_uploads: media.map((m) => ({ file: m.path, filename: m.name })),
+      });
+      return true;
+    } catch (err) {
+      console.error('Failed to attach saved files:', err?.data?.error || err);
+      await botClient.chat.postMessage({
+        channel: dm,
+        text: `:warning: I saved its attachments but couldn't send them here: ${media.map((m) => m.name).join(', ')}`,
+      }).catch(() => {});
+      return false;
+    }
+  }
+
+  return { onInteractive, onStarAdded, onStarRemoved, onMessage, onTokensRevoked, handleDeletion, backfill };
 }
