@@ -7,6 +7,17 @@ import { describeFiles, needsCapture, captureMedia, storedMedia, removeMedia } f
 
 export const WATCH_CALLBACK_ID = 'watch_message';
 
+const GREETINGS = [
+  (m) => `hey ${m}`,
+  (m) => `yo ${m}`,
+  (m) => m,
+  (m) => `${m} ${m} ${m}`,
+];
+
+export function greeting(userId) {
+  return GREETINGS[Math.floor(Math.random() * GREETINGS.length)](`<@${userId}>`);
+}
+
 export function createHandlers({ watchlist, getDmChannelId, installUrl }) {
   function persist() {
     saveWatchlist(Object.fromEntries(watchlist));
@@ -52,8 +63,8 @@ export function createHandlers({ watchlist, getDmChannelId, installUrl }) {
   }
 
   const notConnectedText = installUrl
-    ? `:wave: Connect your Slack account first so I can check on messages for you: ${installUrl}`
-    : ":wave: This bot isn't set up for you yet. Ask whoever runs it to add you.";
+    ? `Connect your Slack account first so I can check on messages for you: ${installUrl}`
+    : "This bot isn't set up for you yet. Ask whoever runs it to add you.";
 
   async function onInteractive({ body }) {
     if (body.type !== 'message_action' || body.callback_id !== WATCH_CALLBACK_ID) return;
@@ -69,11 +80,11 @@ export function createHandlers({ watchlist, getDmChannelId, installUrl }) {
     } else if (watchlist.get(key)?.watchers[userId]) {
       removeWatch(userId, key);
       persist();
-      confirmationText = ':white_check_mark: Stopped watching this message.';
+      confirmationText = 'Stopped watching this message.';
     } else {
       addWatch(userId, { ...msg, channel });
       persist();
-      confirmationText = ":floppy_disk: Watching this message — I'll DM you if it gets deleted.";
+      confirmationText = "Watching this message — I'll DM you if it gets deleted.";
     }
 
     if (body.response_url) {
@@ -156,24 +167,24 @@ export function createHandlers({ watchlist, getDmChannelId, installUrl }) {
       ? text.split('\n').map((line) => `> ${line}`).join('\n')
       : '> _(no text)_';
 
-    let contextLine = ':link: No other messages found nearby to link to.';
+    let contextLine = 'No other messages found nearby to link to.';
     if (context) {
       const label = context.direction === 'before' ? 'Message before it' : 'Message after it (nothing before it)';
       const by = context.userId ? ` by <@${context.userId}>` : '';
       contextLine = context.permalink
-        ? `:link: <${context.permalink}|${label}>${by}`
-        : `:link: ${label}${by} (couldn't get a link)`;
+        ? `<${context.permalink}|${label}>${by}`
+        : `${label}${by} (couldn't get a link)`;
     }
 
     let filesLine = null;
     if (media.length) {
-      filesLine = `:paperclip: ${media.length === 1 ? 'Its attachment is' : `Its ${media.length} attachments are`} below.`;
+      filesLine = `${media.length === 1 ? 'Its attachment is' : `Its ${media.length} attachments are`} below.`;
     } else if (fileNames.length) {
-      filesLine = `:paperclip: It had ${fileNames.length === 1 ? 'an attachment' : `${fileNames.length} attachments`} I couldn't save a copy of: ${fileNames.join(', ')}`;
+      filesLine = `It had ${fileNames.length === 1 ? 'an attachment' : `${fileNames.length} attachments`} I couldn't save a copy of: ${fileNames.join(', ')}`;
     }
 
     const bodyText = [
-      `*Originally said by:* <@${authorId}>${missed ? ' _(caught on a catch-up check, so it may have been deleted a while ago)_' : ''}`,
+      `*Originally said by:* ${authorId ? `<@${authorId}>` : prev.username || 'unknown (a bot or app)'}${missed ? ' _(caught on a catch-up check, so it may have been deleted a while ago)_' : ''}`,
       quoted,
       filesLine,
       contextLine,
@@ -200,7 +211,7 @@ export function createHandlers({ watchlist, getDmChannelId, installUrl }) {
 
     let allSent = true;
     for (const userId of watchers) {
-      const dmText = `yo <@${userId}>, a message you saved in ${channelLink} got deleted :wastebasket:\n${bodyText}`;
+      const dmText = `${greeting(userId)}, a message you saved in ${channelLink} got deleted\n${bodyText}`;
       try {
         const dm = await getDmChannelId(userId);
         await botClient.chat.postMessage({ channel: dm, text: dmText });
@@ -225,7 +236,7 @@ export function createHandlers({ watchlist, getDmChannelId, installUrl }) {
       console.error('Failed to attach saved files:', err?.data?.error || err);
       await botClient.chat.postMessage({
         channel: dm,
-        text: `:warning: I saved its attachments but couldn't send them here: ${media.map((m) => m.name).join(', ')}`,
+        text: `I saved its attachments but couldn't send them here: ${media.map((m) => m.name).join(', ')}`,
       }).catch(() => {});
       return false;
     }
