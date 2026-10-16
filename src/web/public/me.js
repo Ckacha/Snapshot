@@ -174,18 +174,34 @@ function renderItem(it) {
     ? el('div', { className: 'text collapsed' }, ...mrkdwn(it.text))
     : el('div', { className: 'text muted', textContent: '(no text)' });
 
-  const files = it.files.length
-    ? el('div', { className: 'files' }, ...it.files.map((name) => el('span', { className: 'file', textContent: name, title: name })),
-      it.savedFiles ? el('span', { className: 'saved-copy', textContent: 'copy saved' }) : null)
+  const media = it.media ?? [];
+  const fileUrl = (m, download) => `/api/me/file?key=${encodeURIComponent(it.key)}&i=${m.i}${download ? '&download=1' : ''}`;
+  const images = media.filter((m) => m.image);
+  const gallery = images.length
+    ? el('div', { className: 'gallery' }, ...images.map((m) => {
+     const img = el('img', { src: fileUrl(m), alt: m.name, title: m.name, loading: 'lazy' });
+      img.addEventListener('error', () => img.closest('a')?.remove(), { once: true });
+      return el('a', { href: fileUrl(m), target: '_blank', rel: 'noopener' }, img);
+    }))
+    : null;
+     
+  const savedNames = new Set(media.map((m) => m.name));
+  const files = it.files.length || media.length
+    ? el('div', { className: 'files' },
+      ...media.map((m) => el('a', { className: 'file saved', href: fileUrl(m, true), download: m.name, textContent: `↓ ${m.name}`, title: `Download ${m.name}` })),
+      ...it.files.filter((name) => !savedNames.has(name)).map((name) => el('span', { className: 'file', textContent: name, title: `${name} (no copy saved)` })))
     : null;
 
   const foot = el('p', { className: 'foot' });
   if (it.link) foot.append(el('a', { href: it.link, target: '_blank', rel: 'noopener', textContent: 'Open in Slack ↗' }));
+  const stop = el('button', { type: 'button', className: 'stop', textContent: 'Stop watching' });
+  stop.addEventListener('click', () => unwatchOne(it.key, stop));
+  foot.append(stop);
 
   return el('li', { className: 'item' },
     el('label', { className: 'pick' }, box),
     avatar(it.author),
-    el('div', { className: 'body' }, head, dates, text, files, foot));
+    el('div', { className: 'body' }, head, dates, text, gallery, files, foot));
 }
 
 function addShowMore() {
@@ -286,6 +302,21 @@ $('remove').addEventListener('click', async () => {
     alert("Couldn't update your list. Refresh and try again.");
   }
 });
+
+async function unwatchOne(key, button) {
+  button.disabled = true;
+  button.textContent = 'Stopping…';
+  const { ok } = await api('/api/me/unwatch', { keys: [key] });
+  if (ok) {
+    state.items = state.items.filter((it) => it.key !== key);
+    state.selected.delete(key);
+    render();
+  } else {
+    button.disabled = false;
+    button.textContent = 'Stop watching';
+    alert("Couldn't update your list. Refresh and try again.");
+  }
+}
 
 $('add').addEventListener('submit', async (e) => {
   e.preventDefault();

@@ -3,7 +3,7 @@ import { getClient, removeUser } from '../tokens.js';
 import { watchlistKey, saveWatchlist, appendDeletedLog, watcherIds } from './watchlist.js';
 import { findContextMessage } from './context.js';
 import { checkExists, lookupMessage } from './reconcile.js';
-import { describeFiles, needsCapture, captureMedia, storedMedia, removeMedia } from './media.js';
+import { describeFiles, needsCapture, captureMedia, storedMedia, removeMedia, imageType, mediaFile } from './media.js';
 import { resolveEmoji, EMOJI_PATTERN } from '../emoji.js';
 
 export const WATCH_CALLBACK_ID = 'watch_message';
@@ -290,6 +290,7 @@ export function createHandlers({ watchlist, getDmChannelId, installUrl, slackUrl
       text: e.text ?? '',
       files: (e.files ?? []).map((f) => f.name),
       savedFiles: storedMedia(e).length,
+      media: storedMedia(e).map((m, i) => ({ i, name: m.name, image: Boolean(imageType(m.name)) })),
       savedAt: e.watchers[userId],
       link: messageLink(e),
     })).sort((a, b) => String(b.savedAt).localeCompare(String(a.savedAt)));
@@ -308,6 +309,12 @@ export function createHandlers({ watchlist, getDmChannelId, installUrl, slackUrl
 
     if (removed) persist();
     return removed;
+  }
+
+  function fileFor(userId, key, index) {
+    const entry = watchlist.get(key);
+    if (!entry?.watchers?.[userId]) return null;
+    return mediaFile(entry, index); 
   }
 
   async function watchLink(userId, link) {
@@ -338,5 +345,5 @@ export function createHandlers({ watchlist, getDmChannelId, installUrl, slackUrl
     return { ok: true, already };
   }
 
-  return { onInteractive, onStarAdded, onStarRemoved, onMessage, onTokensRevoked, handleDeletion, backfill, listFor, unwatch, watchLink };
+  return { onInteractive, onStarAdded, onStarRemoved, onMessage, onTokensRevoked, handleDeletion, backfill, listFor, unwatch, watchLink, fileFor };
 }

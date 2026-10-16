@@ -1,4 +1,5 @@
 import http from 'node:http';
+import fs from 'node:fs';
 import crypto from 'node:crypto';
 import { WebClient } from '@slack/web-api';
 import { saveUserToken, canStoreTokens, getClient } from '../tokens.js';
@@ -139,6 +140,24 @@ export function startWebServer({ config, teamId, onInstalled, api }) {
 
     if (req.method === 'GET' && url.pathname === '/api/me') {
       return sendJson(res, 200, { csrf: session.csrf, ...(await api.listFor(userId)) });
+    }
+
+    if (req.method === 'GET' && url.pathname === '/api/me/file') {
+
+      const file = api.fileFor(userId, url.searchParams.get('key') ?? '', Number(url.searchParams.get('i')));
+      if (!file) return sendJson(res, 404, { error: 'not_found' });
+      const inline = file.type && url.searchParams.get('download') !== '1';
+      res.writeHead(200, {
+        ...SECURITY_HEADERS,
+        'Content-Type': inline ? file.type : 'application/octet-stream',
+        'Content-Length': file.size,
+        'Content-Disposition': `${inline ? 'inline' : 'attachment'}; filename*=UTF-8''${encodeURIComponent(file.name)}`,
+        'Content-Security-Policy': "default-src 'none'; sandbox",
+        'Cross-Origin-Resource-Policy': 'same-origin',
+        'Cache-Control': 'private, max-age=3600',
+      });
+
+      return fs.createReadStream(file.path).pipe(res);
     }
 
     if (req.method !== 'POST') return sendJson(res, 405, { error: 'method' });

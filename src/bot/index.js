@@ -56,7 +56,7 @@ async function main() {
   const web = webConfig();
   const installUrl = web.missing ? null : `${web.baseUrl}/`;
 
-  const { onInteractive, onStarAdded, onStarRemoved, onMessage, onTokensRevoked, handleDeletion, backfill, listFor, unwatch, watchLink } =
+  const { onInteractive, onStarAdded, onStarRemoved, onMessage, onTokensRevoked, handleDeletion, backfill, listFor, unwatch, watchLink, fileFor } =
     createHandlers({ watchlist, getDmChannelId, installUrl, slackUrl: owner.url });
 
   if (web.missing) {
@@ -65,7 +65,7 @@ async function main() {
     startWebServer({
       config: web,
       teamId: owner.team_id,
-      api: { listFor, unwatch, watchLink },
+      api: { listFor, unwatch, watchLink, fileFor },
       onInstalled: async (userId, { isNew }) => {
         if (!isNew) return;
         await botClient.chat.postMessage({

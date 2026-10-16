@@ -112,10 +112,11 @@ input:focus-visible, button:focus-visible, a:focus-visible { outline: 2px solid 
 .more { background: none; border: 0; padding: .2rem 0 0; color: var(--link); font-size: .875rem; }
 .files { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; margin-top: .45rem; }
 .file { font-size: .8125rem; border: 1px solid var(--line); border-radius: 6px; padding: .2rem .55rem; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.saved-copy { color: var(--ok); font-size: .8125rem; }
 .foot { display: flex; flex-wrap: wrap; gap: 1rem; margin: .45rem 0 0; font-size: .8125rem; color: var(--muted); }
 .foot a { color: var(--link); font-weight: 600; text-decoration: none; }
 .foot a:hover { text-decoration: underline; }
+.foot .stop { margin-left: auto; padding: .15rem .55rem; border: 1px solid var(--line); border-radius: 6px; background: transparent; color: var(--fg); font-size: .75rem; font-weight: 600; }
+.foot .stop:hover:not(:disabled) { border-color: var(--muted); }
 .empty { text-align: center; padding: 2rem 0; }
 
 @media (max-width: 520px) {
@@ -125,3 +126,8 @@ input:focus-visible, button:focus-visible, a:focus-visible { outline: 2px solid 
 }
 .fine a { color: inherit; font-weight: 600; }
 .emoji { width: 1.25em; height: 1.25em; vertical-align: -.25em; object-fit: contain; }
+.gallery { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .5rem; }
+.gallery a { display: block; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; line-height: 0; }
+.gallery img { display: block; max-width: min(360px, 100%); max-height: 240px; object-fit: contain; }
+a.file.saved { color: var(--link); font-weight: 600; text-decoration: none; }
+a.file.saved:hover { border-color: var(--link); }

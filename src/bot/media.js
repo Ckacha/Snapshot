@@ -56,3 +56,14 @@ export function storedMedia(entry) {
 export function removeMedia(key) {
   fs.rmSync(dirFor(key), { recursive: true, force: true });
 }
+const IMAGE_TYPES = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp' };
+
+export const imageType = (name) => IMAGE_TYPES[path.extname(String(name)).toLowerCase()] ?? null;
+
+export function mediaFile(entry, index) {
+  const m = storedMedia(entry)[index];
+  if (!m) return null;
+  const file = path.resolve(m.path);
+  if (!file.startsWith(MEDIA_DIR + path.sep)) return null;
+  return { name: m.name || path.basename(file), path: file, size: fs.statSync(file).size, type: imageType(m.name) };
+}
