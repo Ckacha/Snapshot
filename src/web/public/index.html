@@ -21,7 +21,7 @@
         <p class="lede">Messages you saved get deleted? SnapShot will make sure something like that will never happen again</p>
       </div>
       <p class="cta"><a class="button" href="/slack/install">Connect with Slack</a></p>
-      <p class="fine">Already connected? <a href="/me">See your watched messages</a></p>
+      <p class="fine" id="status"><a href="/me">Watched messages</a> <span id="status-hint">&lt;- Click this to check your saved messages!</span></p>
     </div>
     <div class="cards">
       <div class="card">
@@ -34,7 +34,7 @@
         <p class="fine">SnapShot only watches messages you save after you first connect it to Slack; anything saved before won't be covered :p</p>
       </div>
       <div class="card">
-        <h2>What connecting allows</h2>
+        <h2 id="allows">What connecting allows</h2>
         <ul>
           <li>Reading messages in channels and DMs <em>you</em> can already see, to check whether watched ones still exist.</li>
           <li>Seeing what you save for later, so saved messages get watched automatically.</li>

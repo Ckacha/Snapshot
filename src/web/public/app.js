@@ -31,3 +31,23 @@ document.querySelectorAll('.model').forEach(buildModel);
 const reasonEl = document.getElementById('reason');
 const reason = new URLSearchParams(location.search).get('reason') ?? (location.pathname === '/error' ? null : 'notfound');
 if (reasonEl && reasons[reason]) reasonEl.textContent = reasons[reason];
+
+const statusEl = document.getElementById('status');
+
+if (statusEl) {
+  fetch('/api/session', { credentials: 'same-origin' })
+    .then((res) => res.json())
+    .then(({ connected, siren }) => {
+      const heading = document.getElementById('allows');
+      if (siren && heading) {
+        const img = Object.assign(document.createElement('img'), { className: 'emoji', src: siren, alt: ':siren1:', title: ':siren1:' });
+        img.addEventListener('error', () => img.remove(), { once: true });
+        heading.append(' ', img);
+      }
+      
+      if (!connected) return;
+      document.getElementById('status-hint').remove();
+      statusEl.prepend("You're connected to Slack · ");
+    })
+    .catch(() => {});
+}

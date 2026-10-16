@@ -5,6 +5,7 @@ import { WebClient } from '@slack/web-api';
 import { saveUserToken, canStoreTokens, getClient } from '../tokens.js';
 import { serveStatic, serveNotFound, SECURITY_HEADERS } from './static.js';
 import { sessionCookie, clearSessionCookie, readSession } from './session.js';
+import { resolveEmoji } from '../emoji.js';
 
 export const USER_SCOPES = [
   'channels:history', 'groups:history', 'im:history', 'mpim:history',
@@ -133,6 +134,12 @@ export function startWebServer({ config, teamId, onInstalled, api }) {
     if (url.pathname === '/api/logout' && req.method === 'POST') {
       return sendJson(res, 200, { ok: true }, { 'Set-Cookie': clearSessionCookie });
     }
+
+    if (req.method === 'GET' && url.pathname === '/api/session') {
+      const emoji = await Promise.race([resolveEmoji(['siren1']), new Promise((r) => setTimeout(() => r({}), 3000))]).catch(() => ({}));
+      return sendJson(res, 200, { connected: Boolean(session && getClient(session.userId)), siren: emoji.siren1?.url ?? null });
+    }
+    
     if (!session || !getClient(session.userId)) {
       return sendJson(res, 401, { error: 'signed_out' }, session ? { 'Set-Cookie': clearSessionCookie } : {});
     }
