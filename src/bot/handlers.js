@@ -1,9 +1,10 @@
-import { botClient, resolveUserName, resolveChannelName, channelMention } from '../clients.js';
+import { botClient, resolveUserName, resolveUserProfile, resolveChannelName, channelMention } from '../clients.js';
 import { getClient, removeUser } from '../tokens.js';
 import { watchlistKey, saveWatchlist, appendDeletedLog, watcherIds } from './watchlist.js';
 import { findContextMessage } from './context.js';
 import { checkExists, lookupMessage } from './reconcile.js';
 import { describeFiles, needsCapture, captureMedia, storedMedia, removeMedia } from './media.js';
+import { resolveEmoji, EMOJI_PATTERN } from '../emoji.js';
 
 export const WATCH_CALLBACK_ID = 'watch_message';
 const NAME_LOOKUP_BUDGET_MS = 5000;
@@ -274,11 +275,18 @@ export function createHandlers({ watchlist, getDmChannelId, installUrl, slackUrl
     const deadline = new Promise((r) => setTimeout(r, NAME_LOOKUP_BUDGET_MS));
     const lookup = (ids, resolve) => Promise.all([...ids].map(async (id) =>
       [id, await Promise.race([resolve(id, client), deadline.then(() => null)])])).then(Object.fromEntries);
-    const [users, channels] = await Promise.all([lookup(userIds, resolveUserName), lookup(channelIds, resolveChannelName)]);
+    const emojiNames = mine.flatMap(([, e]) => [...(e.text ?? '').matchAll(EMOJI_PATTERN)].map((m) => m[1]));
+    const [profiles, channels, emoji] = await Promise.all([
+      lookup(userIds, resolveUserProfile),
+      lookup(channelIds, resolveChannelName),
+      Promise.race([resolveEmoji(emojiNames), deadline.then(() => ({}))]),
+    ]);
     const items = mine.map(([key, e]) => ({
       key,
       channel: channels[e.channel] && channels[e.channel] !== e.channel ? channels[e.channel] : fallbackChannelName(e.channel),
-      author: e.user ? users[e.user] ?? e.user : null,
+      author: e.user ? profiles[e.user] ?? { id: e.user, displayName: null, avatar: null } : null,
+      postedAt: Math.round(Number(e.ts) * 1000) || null,
+      inThread: Boolean(e.thread_ts && e.thread_ts !== e.ts),
       text: e.text ?? '',
       files: (e.files ?? []).map((f) => f.name),
       savedFiles: storedMedia(e).length,
@@ -286,7 +294,8 @@ export function createHandlers({ watchlist, getDmChannelId, installUrl, slackUrl
       link: messageLink(e),
     })).sort((a, b) => String(b.savedAt).localeCompare(String(a.savedAt)));
 
-    return { userName: users[userId], users, items };
+    const users = Object.fromEntries(Object.entries(profiles).filter(([, p]) => p).map(([id, p]) => [id, p.displayName]));
+    return { userName: users[userId], users, emoji, items };
   }
 
   function unwatch(userId, keys) {

@@ -1,10 +1,106 @@
 const $ = (id) => document.getElementById(id);
 
-const state = { csrf: null, users: {}, items: [], selected: new Set(), query: '' };
+const state = { csrf: null, users: {}, emoji: {}, items: [], selected: new Set(), query: '' };
+
+const EMOJI_PATTERN = /:([a-z0-9_+'-]{1,100}):/g;
+const EMPHASIS = /(^|[^\w*_~])([*_~])(?!\s)([^\n]*?\S)\2(?![\w*_~])/;
+const EMPHASIS_TAGS = { '*': 'strong', _: 'em', '~': 's' };
+
+const decode = (s) => s.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+
+function withEmoji(text) {
+  const parts = [];
+  let last = 0;
+  for (const m of text.matchAll(EMOJI_PATTERN)) {
+    const hit = state.emoji[m[1]];
+    if (!hit) continue;
+    parts.push(text.slice(last, m.index));
+    if (hit.char) {
+      parts.push(hit.char);
+    } else {
+      const img = el('img', { className: 'emoji', src: hit.url, alt: m[0], title: m[0], loading: 'lazy' });
+      img.addEventListener('error', () => img.replaceWith(m[0]), { once: true });
+      parts.push(img);
+    }
+
+    last = m.index + m[0].length;
+  }
+  parts.push(text.slice(last));
+  return parts;
+}
+
+function withEmphasis(text) {
+  const m = EMPHASIS.exec(text);
+  if (!m) return withEmoji(text);
+  const start = m.index + m[1].length;
+  return [
+    ...withEmoji(text.slice(0, start)),
+    el(EMPHASIS_TAGS[m[2]], {}, ...withEmphasis(m[3])),
+    ...withEmphasis(text.slice(start + m[3].length + 2)),
+  ];
+}
+
+const mention = (text) => el('span', { className: 'mention', textContent: text });
+
+function entity(inner) {
+  let m;
+  if ((m = /^@([UW][A-Z0-9]+)(?:\|(.*))?$/.exec(inner))) return mention(`@${state.users[m[1]] || m[2] || 'someone'}`);
+  if ((m = /^#([CG][A-Z0-9]+)(?:\|(.*))?$/.exec(inner))) return mention(`#${m[2] || 'channel'}`);
+  if ((m = /^!subteam\^[A-Z0-9]+(?:\|(.*))?$/.exec(inner))) return mention(m[1] || '@group');
+  if ((m = /^!(here|channel|everyone)\b/.exec(inner))) return mention(`@${m[1]}`);
+  if ((m = /^!date\^[^|]*\|(.*)$/.exec(inner))) return decode(m[1]);
+  const bar = inner.indexOf('|');
+  const url = decode(bar === -1 ? inner : inner.slice(0, bar));
+  const label = bar === -1 ? url.replace(/^mailto:/i, '') : decode(inner.slice(bar + 1));
+  if (/^(https?:|mailto:)/i.test(url)) return el('a', { href: url, target: '_blank', rel: 'noopener noreferrer', textContent: label });
+  return label;
+}
+
+function inline(text) {
+  const out = [];
+  text.split(/(`[^`\n]+`)/).forEach((part, i) => {
+    if (i % 2) {
+      out.push(el('code', { textContent: decode(part.slice(1, -1)) }));
+      return;
+    }
+    part.split(/<([^<>\n]+)>/).forEach((piece, j) => {
+      out.push(...(j % 2 ? [entity(piece)] : withEmphasis(decode(piece))));
+    });
+  });
+  return out;
+}
+
+function mrkdwn(text) {
+  const out = [];
+  const chunks = text.split(/```([\s\S]*?)```/);
+  chunks.forEach((chunk, i) => {
+    if (i % 2) {
+      out.push(el('pre', { textContent: decode(chunk.replace(/^\n|\n$/g, '')) }));
+      return;
+    }
+    if (i > 0) chunk = chunk.replace(/^\n/, '');
+    if (i < chunks.length - 1) chunk = chunk.replace(/\n$/, '');
+    if (!chunk) return;
+    let quote = null;
+    const lines = chunk.split('\n');
+    lines.forEach((line, n) => {
+      const q = /^(?:&gt;|>) ?(.*)$/.exec(line);
+      if (q) {
+        if (!quote) out.push((quote = el('blockquote')));
+        else quote.append('\n');
+        quote.append(...inline(q[1]));
+        return;
+      }
+      quote = null;
+      out.push(...inline(line));
+      if (n < lines.length - 1 && !/^(?:&gt;|>)/.test(lines[n + 1])) out.push('\n');
+    });
+  });
+  return out;
+}
 
 function formatText(text) {
   if (!text) return '';
-
   return text
     .replace(/<@([UW][A-Z0-9]+)(?:\|([^>]*))?>/g, (_, id, name) => `@${state.users[id] || name || 'someone'}`)
     .replace(/<#[A-Z0-9]+\|([^>]*)>/g, '#$1')
@@ -17,6 +113,15 @@ function formatText(text) {
 }
 
 const dateFmt = new Intl.DateTimeFormat(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+const shortDateFmt = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' });
+const timeFmt = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' });
+const fullFmt = new Intl.DateTimeFormat(undefined, { dateStyle: 'full', timeStyle: 'short' });
+
+function postedLabel(ms) {
+  const d = new Date(ms);
+  const day = d.getFullYear() === new Date().getFullYear() ? shortDateFmt.format(d) : dateFmt.format(d);
+  return `${day} at ${timeFmt.format(d)}`;
+}
 
 function el(tag, props = {}, ...children) {
   const node = document.createElement(tag);
@@ -29,7 +134,15 @@ function visibleItems() {
   const q = state.query.trim().toLowerCase();
   if (!q) return state.items;
   return state.items.filter((it) =>
-    [it.display, it.channel, it.author, ...it.files].some((s) => s && s.toLowerCase().includes(q)));
+    [it.display, it.channel, it.author?.displayName, it.author?.name, ...it.files].some((s) => s && s.toLowerCase().includes(q)));
+}
+
+function avatar(author) {
+  const initial = el('div', { className: 'face initial', textContent: (author?.displayName || '?').trim().charAt(0).toUpperCase() || '?' });
+  if (!author?.avatar) return initial;
+  const img = el('img', { className: 'face', src: author.avatar, alt: '', loading: 'lazy' });
+  img.addEventListener('error', () => img.replaceWith(initial), { once: true });
+  return img;
 }
 
 function renderItem(it) {
@@ -41,30 +154,56 @@ function renderItem(it) {
     updateToolbar();
   });
 
-  const meta = [it.channel, it.author, it.savedAt && `saved ${dateFmt.format(new Date(it.savedAt))}`].filter(Boolean).join(' · ');
-  const text = it.display
-    ? el('p', { className: 'text', textContent: it.display })
-    : el('p', { className: 'text muted', textContent: '(no text)' });
+  const head = el('p', { className: 'head' },
+    el('strong', { className: 'name', textContent: it.author ? it.author.displayName || 'Unknown user' : 'App or bot', title: it.author?.name || '' }),
+    el('span', { className: 'chan', textContent: it.inThread ? `${it.channel} · thread` : it.channel }));
 
-  const extras = el('div', { className: 'extras' });
-  if (it.files.length) {
-    const label = `${it.files.length} attachment${it.files.length === 1 ? '' : 's'}`;
-    extras.append(el('span', {
-      textContent: it.savedFiles ? `${label}, copy saved` : label,
-      title: it.files.join(', '),
-    }));
+  const dates = el('p', { className: 'dates' });
+  if (it.postedAt) {
+    const time = el('time', { textContent: `Sent ${postedLabel(it.postedAt)}`, title: fullFmt.format(new Date(it.postedAt)) });
+    time.dateTime = new Date(it.postedAt).toISOString();
+    dates.append(time);
+  }
+  if (it.savedAt) {
+    const saved = el('time', { textContent: `Saved ${postedLabel(Date.parse(it.savedAt))}`, title: fullFmt.format(new Date(it.savedAt)) });
+    saved.dateTime = it.savedAt;
+    dates.append(saved);
   }
 
-  if (it.link) extras.append(el('a', { href: it.link, target: '_blank', rel: 'noopener', textContent: 'Open in Slack ↗' }));
+  const text = it.text
+    ? el('div', { className: 'text collapsed' }, ...mrkdwn(it.text))
+    : el('div', { className: 'text muted', textContent: '(no text)' });
+
+  const files = it.files.length
+    ? el('div', { className: 'files' }, ...it.files.map((name) => el('span', { className: 'file', textContent: name, title: name })),
+      it.savedFiles ? el('span', { className: 'saved-copy', textContent: 'copy saved' }) : null)
+    : null;
+
+  const foot = el('p', { className: 'foot' });
+  if (it.link) foot.append(el('a', { href: it.link, target: '_blank', rel: 'noopener', textContent: 'Open in Slack ↗' }));
 
   return el('li', { className: 'item' },
     el('label', { className: 'pick' }, box),
-    el('div', { className: 'body' }, el('p', { className: 'meta', textContent: meta }), text, extras));
+    avatar(it.author),
+    el('div', { className: 'body' }, head, dates, text, files, foot));
+}
+
+function addShowMore() {
+  for (const text of document.querySelectorAll('.text.collapsed')) {
+    if (text.scrollHeight <= text.clientHeight + 2 || text.nextElementSibling?.classList.contains('more')) continue;
+    const more = el('button', { type: 'button', className: 'more', textContent: 'Show more' });
+    more.addEventListener('click', () => {
+      const open = text.classList.toggle('collapsed');
+      more.textContent = open ? 'Show more' : 'Show less';
+    });
+    text.after(more);
+  }
 }
 
 function render() {
   const items = visibleItems();
   $('list').replaceChildren(...items.map(renderItem));
+  requestAnimationFrame(addShowMore);
   $('empty').hidden = state.items.length > 0;
   const n = state.items.length;
   $('summary').textContent = `${n} message${n === 1 ? '' : 's'} watched${state.userName ? ` · signed in as ${state.userName}` : ''}`;
@@ -110,6 +249,7 @@ async function load() {
   }
   state.csrf = data.csrf;
   state.users = data.users ?? {};
+  state.emoji = data.emoji ?? {};
   state.userName = data.userName;
   state.items = (data.items ?? []).map((it) => ({ ...it, display: formatText(it.text) }));
   for (const key of state.selected) if (!state.items.some((it) => it.key === key)) state.selected.delete(key);

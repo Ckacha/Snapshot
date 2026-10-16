@@ -14,7 +14,7 @@ const FILES = {
 };
 
 export const SECURITY_HEADERS = {
-  'Content-Security-Policy': "default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+  'Content-Security-Policy': "default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self' https://emoji.slack-edge.com https://avatars.slack-edge.com https://ca.slack-edge.com https://secure.gravatar.com; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
   'X-Content-Type-Options': 'nosniff',
   'Referrer-Policy': 'no-referrer',
 };

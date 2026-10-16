@@ -12,18 +12,39 @@ export const userClient = new WebClient(userToken);
 
 export const botClient = botToken ? new WebClient(botToken) : null;
 
-const userCache = new Map();
+const AVATAR_HOSTS = new Set(['avatars.slack-edge.com', 'ca.slack-edge.com', 'secure.gravatar.com']);
+
+function safeAvatar(url) {
+  try {
+    const u = new URL(url);
+    return u.protocol === 'https:' && AVATAR_HOSTS.has(u.hostname) ? u.href : null;
+  } catch {
+    return null;
+  }
+}
+
+const profileCache = new Map();
+export async function resolveUserProfile(userId, client = userClient) {
+  if (!userId) return null;
+  if (profileCache.has(userId)) return profileCache.get(userId);
+  try {
+    const { user } = await client.users.info({ user: userId });
+    const profile = {
+      id: userId,
+      name: user?.real_name || user?.name || userId,
+      displayName: user?.profile?.display_name || user?.real_name || user?.name || userId,
+      avatar: safeAvatar(user?.profile?.image_72 || user?.profile?.image_48),
+    };
+    profileCache.set(userId, profile);
+    return profile;
+  } catch {
+    return null;
+  }
+}
+
 export async function resolveUserName(userId, client = userClient) {
   if (!userId) return null;
-  if (userCache.has(userId)) return userCache.get(userId);
-  try {
-    const res = await client.users.info({ user: userId });
-    const name = res.user?.real_name || res.user?.name || userId;
-    userCache.set(userId, name);
-    return name;
-  } catch {
-    return userId;
-  }
+  return (await resolveUserProfile(userId, client))?.name ?? userId;
 }
 
 const channelInfoCache = new Map();
