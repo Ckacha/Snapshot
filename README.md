@@ -13,4 +13,4 @@ Well fear not; introducing SnapShot!
 
 With SnapShot, you are now able to be notified if such cases happen, and will satisfy your itch to know what mysterious messages were obliterated from your view!
 
-Go to snapshot.ckacha.dev and continue there.
+Go to [snapshot.ckacha.dev](https://snapshot.ckacha.dev/) and continue there.
